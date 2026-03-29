@@ -2,6 +2,7 @@ import { useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import { ROLES } from '../utils/auth';
+import { loginRequest } from '../services/authService';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -12,29 +13,33 @@ const Login = () => {
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    setError('');
     try {
-      // Mock login since backend endpoint isn't wired yet
-      // Simulate real data behavior
-      if (email.includes('employee')) {
-        login({ token: 'mock-token-emp', role: ROLES.EMPLOYEE, user: { name: 'Emp User' } });
-        navigate('/employee');
-      } else if (email.includes('manager')) {
-        login({ token: 'mock-token-mgr', role: ROLES.MANAGER, user: { name: 'Mgr User' } });
-        navigate('/manager');
-      } else if (email.includes('finance')) {
-        login({ token: 'mock-token-fin', role: ROLES.FINANCE, user: { name: 'Fin Admin' } });
-        navigate('/finance');
-      } else if (email.includes('director')) {
-        login({ token: 'mock-token-dir', role: ROLES.DIRECTOR, user: { name: 'Director User' } });
-        navigate('/director');
-      } else if (email.includes('admin')) {
-        login({ token: 'mock-token-adm', role: ROLES.ADMIN, user: { name: 'Super Admin' } });
-        navigate('/admin');
-      } else {
-        setError('Use employee, manager, finance, director, or admin in email to mock roles');
-      }
+      // Call the actual backend via our service
+      const response = await loginRequest(email, password);
+      const authData = response.data; // this holds { token, user }
+      
+      // Using context to update the UI State
+      login({ 
+        token: authData.token, 
+        role: authData.user.role, 
+        user: authData.user 
+      });
+
+      // Route based on defined backend role 
+      if (authData.user.role === ROLES.EMPLOYEE) navigate('/employee');
+      else if (authData.user.role === ROLES.MANAGER) navigate('/manager');
+      else if (authData.user.role === ROLES.FINANCE) navigate('/finance');
+      else if (authData.user.role === ROLES.DIRECTOR) navigate('/director');
+      else if (authData.user.role === ROLES.ADMIN) navigate('/admin');
+      else navigate('/'); // fallback
+      
     } catch (err) {
-      setError('Login failed');
+      if (err.response && err.response.data && err.response.data.message) {
+        setError(err.response.data.message);
+      } else {
+        setError('Login failed. Please check your credentials or server status.');
+      }
     }
   };
 
