@@ -42,7 +42,7 @@ app.use('/api/users', userRoutes);           // Admin CRUD for users
 
 // Health check route
 app.get('/api/health', (req, res) => {
-  res.status(200).json({ status: 'OK', message: 'Backend Server is running.' });
+  res.send("Backend Server is running.");
 });
 
 // ─── Global Error Handler (must be AFTER routes) ─────────────────────
