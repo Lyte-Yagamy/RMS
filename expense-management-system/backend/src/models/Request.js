@@ -138,11 +138,10 @@ const requestSchema = new mongoose.Schema(
       default: 'pending',
       index: true,
     },
-    approvalLevel: {
+    currentStep: {
       type: Number,
-      default: 0, // 0 = submitted, 1 = manager, 2 = finance, 3 = director
+      default: 0, // Points to the index in the approvers array
       min: 0,
-      max: 3,
     },
     approvers: {
       type: [approverSchema],
@@ -175,7 +174,7 @@ const requestSchema = new mongoose.Schema(
 );
 
 // ─── Indexes for common query patterns ───────────────────────────────
-requestSchema.index({ status: 1, approvalLevel: 1 }); // Fetch pending requests at a specific level
+requestSchema.index({ status: 1, currentStep: 1 }); // Fetch pending requests at a specific step
 requestSchema.index({ employeeId: 1, createdAt: -1 }); // Employee's request history
 requestSchema.index({ companyId: 1, status: 1 });       // Company-wide reporting
 
@@ -183,7 +182,7 @@ requestSchema.index({ companyId: 1, status: 1 });       // Company-wide reportin
  * Virtual: Check if request is fully approved (passed all 3 levels)
  */
 requestSchema.virtual('isFullyApproved').get(function () {
-  return this.status === 'approved' && this.approvalLevel >= 3;
+  return this.status === 'approved';
 });
 
 /**

@@ -26,6 +26,12 @@ const companySchema = new mongoose.Schema(
       default: 'USD',
       maxlength: [3, 'Currency code must be 3 characters (e.g. USD, INR, EUR)'],
     },
+    approvalRule: {
+      type: Object,
+      default: {
+        type: 'sequential'
+      }
+    }
   },
   {
     timestamps: true,

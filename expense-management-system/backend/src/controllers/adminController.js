@@ -1,6 +1,9 @@
 const User = require('../models/User');
 const Request = require('../models/Request');
 const Payment = require('../models/Payment');
+const Company = require('../models/Company');
+const Approval = require('../models/Approval');
+const { processApproval: workflowApproval, processRejection: workflowRejection } = require('../services/workflowService');
 
 /**
  * Admin Controller
@@ -199,4 +202,166 @@ const getAllRequests = async (req, res, next) => {
   }
 };
 
-module.exports = { getUsers, getAnalytics, getAllRequests };
+/**
+ * @desc    Create a new user in the admin's company
+ * @route   POST /api/admin/users
+ * @access  Private — admin only
+ */
+const createUser = async (req, res, next) => {
+  try {
+    const { name, email, password, role } = req.body;
+
+    if (!name || !email || !password) {
+      return res.status(400).json({ success: false, message: 'Please provide name, email, and password' });
+    }
+
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ success: false, message: 'User already exists' });
+    }
+
+    const user = await User.create({
+      name,
+      email,
+      password,
+      role: role || 'employee',
+      companyId: req.user.companyId,
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'User created successfully',
+      data: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Update an existing user's role
+ * @route   PUT /api/admin/users/:id/role
+ * @access  Private — admin only
+ */
+const updateUserRole = async (req, res, next) => {
+  try {
+    const { role } = req.body;
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    if (user.companyId.toString() !== req.user.companyId.toString()) {
+      return res.status(403).json({ success: false, message: 'Not authorized to modify this user' });
+    }
+
+    user.role = role;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'User role updated successfully',
+      data: { id: user._id, name: user.name, role: user.role },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Set the company-wide approval rule
+ * @route   PUT /api/admin/settings/approval-rule
+ * @access  Private — admin only
+ */
+const setCompanyApprovalRule = async (req, res, next) => {
+  try {
+    const { type, percentage, requiredRole } = req.body;
+
+    if (!['sequential', 'percentage', 'role', 'hybrid'].includes(type)) {
+      return res.status(400).json({ success: false, message: 'Invalid rule type' });
+    }
+
+    const company = await Company.findById(req.user.companyId);
+    if (!company) {
+       return res.status(404).json({ success: false, message: 'Company not found' });
+    }
+
+    company.approvalRule = { type, percentage, requiredRole };
+    await company.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Approval rule configured globally',
+      data: company.approvalRule,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Admin forces approval or rejection unconditionally
+ * @route   PUT /api/admin/override/:requestId
+ * @access  Private — admin only
+ */
+const overrideRequestApproval = async (req, res, next) => {
+  try {
+    const { action, comment } = req.body;
+    const request = await Request.findById(req.params.requestId);
+
+    if (!request) {
+      return res.status(404).json({ success: false, message: 'Request not found' });
+    }
+
+    if (request.companyId.toString() !== req.user.companyId.toString()) {
+      return res.status(403).json({ success: false, message: 'Not authorized for this company' });
+    }
+    
+    if (request.status === 'approved' || request.status === 'rejected') {
+      return res.status(400).json({ success: false, message: `Request is already ${request.status}` });
+    }
+
+    // Admins bypass normal currentStep mapping and force the end state manually
+    request.status = action === 'approved' ? 'approved' : 'rejected';
+    if(action === 'rejected') {
+       request.rejectedBy = req.user._id;
+       request.rejectionReason = comment || 'Admin Override';
+    }
+
+    await Approval.create({
+      requestId: request._id,
+      approverId: req.user._id,
+      role: 'admin',
+      step: 99, // denote override
+      action: action,
+      comment: (comment ? 'ADMIN OVERRIDE: ' + comment : 'ADMIN OVERRIDE'),
+      ruleMet: true,
+    });
+
+    await request.save();
+
+    res.status(200).json({
+      success: true,
+      message: `Request has been forcefully ${action} by Admin`,
+      data: request,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { 
+  getUsers, 
+  getAnalytics, 
+  getAllRequests,
+  createUser,
+  updateUserRole,
+  setCompanyApprovalRule,
+  overrideRequestApproval
+};

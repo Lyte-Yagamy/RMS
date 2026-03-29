@@ -1,7 +1,7 @@
 const Request = require('../models/Request');
 const Approval = require('../models/Approval');
 const User = require('../models/User');
-const { assignApprovers } = require('../services/workflowService');
+const { assignApprovers, processApproval, processRejection } = require('../services/workflowService');
 const {
   notifyRequestSubmitted,
   notifyApprovalNeeded,
@@ -127,10 +127,11 @@ const getAllRequests = async (req, res, next) => {
     if (['manager', 'finance', 'director'].includes(req.user.role)) {
       const requiredLevel = ROLE_LEVEL_MAP[req.user.role];
       if (!status) {
-        query.status = 'pending';
-        query.approvalLevel = requiredLevel - 1;
+        query.status = { $in: ['pending', 'in_progress'] };
+        query.currentStep = requiredLevel - 1;
       } else {
         query.status = status;
+        query.currentStep = requiredLevel - 1;
       }
     } else {
       // Admin sees everything with optional filters
@@ -182,107 +183,28 @@ const getAllRequests = async (req, res, next) => {
  */
 const approveRequest = async (req, res, next) => {
   try {
-    const { comment } = req.body;
-    const userRole = req.user.role;
-    const requiredLevel = ROLE_LEVEL_MAP[userRole];
-
-    if (!requiredLevel) {
-      return res.status(403).json({
-        success: false,
-        message: 'Your role does not have approval privileges',
-      });
-    }
-
     const request = await Request.findById(req.params.id);
 
     if (!request) {
       return res.status(404).json({ success: false, message: 'Request not found' });
     }
 
-    // Ensure same company
     if (request.companyId.toString() !== req.user.companyId.toString()) {
       return res.status(403).json({ success: false, message: 'Not authorized for this company' });
     }
 
-    // Must still be pending
-    if (request.status !== 'pending') {
-      return res.status(400).json({
-        success: false,
-        message: `Request is already ${request.status}`,
-      });
-    }
-
-    // Must be at the correct level
-    if (request.approvalLevel !== requiredLevel - 1) {
-      return res.status(400).json({
-        success: false,
-        message: `This request is not at your approval level. Current: ${request.approvalLevel}, yours: ${requiredLevel}`,
-      });
-    }
-
-    // Prevent self-approval
-    if (request.employeeId.toString() === req.user._id.toString()) {
-      return res.status(400).json({
-        success: false,
-        message: 'You cannot approve your own request',
-      });
-    }
-
-    // Record in audit trail
-    await Approval.create({
-      requestId: request._id,
-      approverId: req.user._id,
-      role: userRole,
-      step: requiredLevel,
-      action: 'approved',
-      comment: comment || '',
-    });
-
-    // Update approvers array on request
-    request.approvers.push({
-      userId: req.user._id,
-      role: userRole,
-      status: 'approved',
-      comment: comment || '',
-      actionDate: new Date(),
-    });
-
-    // Advance level
-    request.approvalLevel = requiredLevel;
-
-    // If director approved (level 3), mark fully approved
-    if (requiredLevel >= 3) {
-      request.status = 'approved';
-    }
-
-    await request.save();
-
-    // Notifications
-    const employee = await User.findById(request.employeeId);
-
-    if (request.status === 'approved' && employee) {
-      await notifyRequestApproved(request, employee);
-    } else {
-      // Notify next approver
-      const LEVEL_ROLE_MAP = { 1: 'finance', 2: 'director' };
-      const nextRole = LEVEL_ROLE_MAP[requiredLevel];
-      if (nextRole) {
-        const nextApprover = await User.findOne({
-          companyId: req.user.companyId,
-          role: nextRole,
-        });
-        if (nextApprover) await notifyApprovalNeeded(request, nextApprover);
-      }
-    }
+    // Rely on the robust workflowService for all logic
+    const result = await processApproval(request, req.user);
 
     res.status(200).json({
       success: true,
-      message: request.status === 'approved'
-        ? 'Request fully approved — ready for payment'
-        : `Request approved at level ${requiredLevel} — forwarded to next approver`,
-      data: request,
+      message: result.message,
+      data: result.request,
     });
   } catch (error) {
+    if (error.statusCode) {
+       return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     next(error);
   }
 };
@@ -299,15 +221,6 @@ const approveRequest = async (req, res, next) => {
 const rejectRequest = async (req, res, next) => {
   try {
     const { comment } = req.body;
-    const userRole = req.user.role;
-    const requiredLevel = ROLE_LEVEL_MAP[userRole];
-
-    if (!requiredLevel) {
-      return res.status(403).json({
-        success: false,
-        message: 'Your role does not have rejection privileges',
-      });
-    }
 
     const request = await Request.findById(req.params.id);
 
@@ -319,52 +232,17 @@ const rejectRequest = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Not authorized for this company' });
     }
 
-    if (request.status !== 'pending') {
-      return res.status(400).json({
-        success: false,
-        message: `Request is already ${request.status}`,
-      });
-    }
-
-    if (request.approvalLevel !== requiredLevel - 1) {
-      return res.status(400).json({
-        success: false,
-        message: `This request is not at your approval level. Current: ${request.approvalLevel}, yours: ${requiredLevel}`,
-      });
-    }
-
-    // Record in audit trail
-    await Approval.create({
-      requestId: request._id,
-      approverId: req.user._id,
-      role: userRole,
-      step: requiredLevel,
-      action: 'rejected',
-      comment: comment || '',
-    });
-
-    // Update request
-    request.approvers.push({
-      userId: req.user._id,
-      role: userRole,
-      status: 'rejected',
-      comment: comment || '',
-      actionDate: new Date(),
-    });
-
-    request.status = 'rejected';
-    await request.save();
-
-    // Notify employee
-    const employee = await User.findById(request.employeeId);
-    if (employee) await notifyRequestRejected(request, employee, comment);
+    const result = await processRejection(request, req.user, comment);
 
     res.status(200).json({
       success: true,
-      message: `Request rejected by ${userRole}`,
-      data: request,
+      message: result.message,
+      data: result.request,
     });
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     next(error);
   }
 };

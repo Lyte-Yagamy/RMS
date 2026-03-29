@@ -79,7 +79,9 @@ const ManagerDashboard = () => {
               <div className="text-sm text-gray-600 italic mt-1 bg-yellow-50 p-2 rounded border border-yellow-100">
                  "{req.description}"
               </div>
-              <div className="text-xl font-bold text-blue-600 mt-2">${req.amount.toFixed(2)}</div>
+              <div className="text-xl font-bold text-blue-600 mt-2">
+                {req.companyId?.baseCurrency || 'USD'} {req.amount.toFixed(2)}
+              </div>
             </div>
             
             <div className="flex items-center gap-3 mt-4 sm:mt-0 self-end sm:self-center">

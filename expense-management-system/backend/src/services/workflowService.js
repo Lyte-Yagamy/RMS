@@ -538,6 +538,7 @@ async function _createAuditRecord(data) {
 }
 
 const User = require('../models/User');
+const Company = require('../models/Company');
 
 /**
  * Auto-assigns the 3-level approval chain to a new request.
@@ -547,6 +548,11 @@ const User = require('../models/User');
  * @returns {Object} The updated request document
  */
 async function assignApprovers(request) {
+  // Transfer the company's rule specifically to this request so it remains immutable for this specific workflow instance
+  const company = await Company.findById(request.companyId);
+  if (company && company.approvalRule) {
+    request.approvalRule = company.approvalRule;
+  }
   // Fetch required roles for the company
   const employee = await User.findById(request.employeeId);
   const managerId = employee ? employee.managerId : null;
