@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { X, Loader2, Upload, FileCheck, ShieldInfo } from 'lucide-react';
+import { X, Loader2, Upload, FileCheck, ShieldAlert } from 'lucide-react';
 import { createRequest } from '../../services/requestService';
 import { uploadReceipt } from '../../services/uploadService';
 
@@ -131,7 +131,7 @@ const RequestForm = ({ onClose, onSuccess }) => {
         <form onSubmit={handleSubmit} className="p-8 space-y-6">
           {error && (
             <div className="bg-red-50 text-red-600 p-4 rounded-xl border border-red-100 text-sm font-medium flex items-center gap-3">
-              <ShieldInfo size={18} />
+              <ShieldAlert size={18} />
               {error}
             </div>
           )}

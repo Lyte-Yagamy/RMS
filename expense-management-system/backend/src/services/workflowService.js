@@ -112,6 +112,7 @@ async function processApproval(request, user) {
   } else if (_hasMoreSteps(request)) {
     // More approvers to go — advance to next step
     request.currentStep += 1;
+    request.approvalLevel = request.currentStep + 1;
     request.status = STATUS.IN_PROGRESS;
 
     const nextApprover = request.approvers[request.currentStep];
@@ -126,7 +127,7 @@ async function processApproval(request, user) {
   const auditRecord = await _createAuditRecord({
     requestId: request._id,
     approverId: user._id,
-    step: request.currentStep - (ruleMet || !_hasMoreSteps(request) ? 0 : 1),
+    step: request.currentStep,
     role: currentApprover.role,
     action: ACTIONS.APPROVED,
     comment: '',
@@ -582,6 +583,7 @@ async function assignApprovers(request) {
   }
 
   request.approvers = approvers;
+  request.approvalLevel = approvers.length > 0 ? 1 : 0;
   await request.save();
   return request;
 }

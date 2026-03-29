@@ -34,7 +34,7 @@ const approvalSchema = new Schema(
     step: {
       type: Number,
       required: [true, 'Step number is required'],
-      min: 1,
+      min: 0,
     },
 
     /**

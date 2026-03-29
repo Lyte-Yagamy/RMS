@@ -57,27 +57,30 @@ const parseReceiptText = (rawText) => {
   const lines = rawText.split('\n').map((l) => l.trim()).filter(Boolean);
 
   // ─── Extract Total Amount ──────────────────────────────────────────
-  // Look for patterns like "Total: $123.45", "TOTAL 123.45", "Grand Total: 1,234.56"
+  // Look for patterns like "Total", "Amount Due", "Balance", etc.
   const totalPatterns = [
-    /(?:grand\s*)?total[\s:]*\$?\s*([\d,]+\.?\d*)/i,
-    /(?:amount\s*due|balance\s*due)[\s:]*\$?\s*([\d,]+\.?\d*)/i,
-    /(?:net\s*amount|subtotal)[\s:]*\$?\s*([\d,]+\.?\d*)/i,
+    /(?:grand\s*)?total[\s:]*[$£€]?\s*([\d,]+(?:\.\d{2})?)/i,
+    /(?:amount\s*due|balance\s*due|total\s*due)[\s:]*[$£€]?\s*([\d,]+(?:\.\d{2})?)/i,
+    /(?:net\s*amount|payable|to\s*pay)[\s:]*[$£€]?\s*([\d,]+(?:\.\d{2})?)/i,
+    /[$£€]\s*([\d,]+(?:\.\d{2})?)/ // Standalone currency pattern
   ];
 
   for (const pattern of totalPatterns) {
     const match = rawText.match(pattern);
     if (match) {
-      result.totalAmount = parseFloat(match[1].replace(/,/g, ''));
+      // Clean up string: remove commas, then parse
+      const cleanAmount = match[1].replace(/,/g, '');
+      result.totalAmount = parseFloat(cleanAmount);
       break;
     }
   }
 
   // ─── Extract Date ─────────────────────────────────────────────────
-  // Common date formats: MM/DD/YYYY, DD-MM-YYYY, YYYY-MM-DD, Month DD YYYY
   const datePatterns = [
-    /(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/,
-    /(\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2})/,
-    /((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4})/i,
+    /(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})/, // 10/12/2023, 10-12-23, 10.12.2023
+    /(\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2})/, // 2023/12/10
+    /((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4})/i, // Dec 10, 2023
+    /(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4})/i  // 10 Dec 2023
   ];
 
   for (const pattern of datePatterns) {
@@ -89,11 +92,20 @@ const parseReceiptText = (rawText) => {
   }
 
   // ─── Extract Vendor Name ──────────────────────────────────────────
-  // Usually the first non-empty meaningful line of the receipt
+  // Usually the header of the receipt. We skip lines that look like:
+  // - Dates, phone numbers, website URLs, or pure numbers
+  const noisePatterns = [
+    /^[\d\/\-\.\s]+$/, // Only digits/date chars
+    /\d{3}[-\s]?\d{3}[-\s]?\d{4}/, // Phone numbers
+    /www\.|http|@|\.com/i, // Web/Email
+    /tax\s*id|gst|vat/i // Tax info
+  ];
+
   if (lines.length > 0) {
-    // Skip lines that are just numbers, dates, or very short
-    for (const line of lines) {
-      if (line.length > 3 && !/^\d+$/.test(line) && !/^\d{1,2}[\/\-]/.test(line)) {
+    for (let i = 0; i < Math.min(lines.length, 5); i++) {
+      const line = lines[i];
+      const isNoise = noisePatterns.some(p => p.test(line));
+      if (line.length > 3 && !isNoise) {
         result.vendor = line;
         break;
       }
@@ -101,11 +113,11 @@ const parseReceiptText = (rawText) => {
   }
 
   // ─── Extract Line Items ───────────────────────────────────────────
-  // Look for lines with a price pattern at the end: "Item name    $12.34"
-  const itemPattern = /^(.+?)\s+\$?\s*([\d,]+\.\d{2})\s*$/;
+  // Pattern: "Item Description   12.34" or "Item Description $12.34"
+  const itemPattern = /^(.+?)\s+[$£€]?\s*([\d,]+(?:\.\d{2})?)\s*$/;
   for (const line of lines) {
     const match = line.match(itemPattern);
-    if (match) {
+    if (match && !/total|subtotal|tax|balance/i.test(match[1])) {
       result.items.push({
         description: match[1].trim(),
         amount: parseFloat(match[2].replace(/,/g, '')),

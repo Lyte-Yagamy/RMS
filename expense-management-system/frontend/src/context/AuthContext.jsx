@@ -10,17 +10,29 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = getToken();
-    const storedRole = localStorage.getItem('role');
-    const storedUser = localStorage.getItem('user');
-    
-    // In a real app, we would validate the token with the backend here
-    if (token) {
-      setIsAuthenticated(true);
-      setRole(storedRole);
-      setUser(storedUser ? JSON.parse(storedUser) : null);
+    try {
+      const token = getToken();
+      const storedRole = localStorage.getItem('role');
+      const storedUser = localStorage.getItem('user');
+      
+      if (token) {
+        setIsAuthenticated(true);
+        setRole(storedRole);
+        // Robust check for JSON.parse
+        if (storedUser && storedUser !== 'undefined' && storedUser !== 'null') {
+          const parsedUser = JSON.parse(storedUser);
+          setUser(parsedUser);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to initialize AuthContext from localStorage:', error);
+      // If parsing fails, clear the corrupted data to allow a clean login
+      removeToken();
+      localStorage.clear();
+    } finally {
+      // Critical: Ensure loading is always set to false so the App renders
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   const login = (data) => {

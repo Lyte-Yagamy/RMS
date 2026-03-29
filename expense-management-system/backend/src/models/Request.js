@@ -40,17 +40,17 @@ const approverSchema = new mongoose.Schema(
  * Approval Rule Sub-Schema
  * Defines the dynamic approval rule applied to this request.
  *
- * Types:
- *   - "percentage": Approve if amount is within a % threshold (e.g. <10% of budget)
- *   - "specific":   Require approval from specific named roles
- *   - "hybrid":     Combination — percentage-based up to a threshold, then specific approvers
+ *   1. Sequential  — Every approver must approve in order (default)
+ *   2. Percentage   — X% of approvers must approve (can short-circuit the chain)
+ *   3. Role-based   — A specific role (e.g. Director) must be among the approvers who approved
+ *   4. Hybrid       — Both percentage AND role conditions must be satisfied up to a threshold, then specific approvers
  */
 const approvalRuleSchema = new mongoose.Schema(
   {
     type: {
       type: String,
-      enum: ['percentage', 'specific', 'hybrid'],
-      default: 'specific',
+      enum: ['sequential', 'percentage', 'role', 'hybrid'],
+      default: 'sequential',
     },
     value: {
       type: mongoose.Schema.Types.Mixed, // Flexible: number for %, array for specific roles, object for hybrid
@@ -134,7 +134,7 @@ const requestSchema = new mongoose.Schema(
     // ─── Approval Workflow ─────────────────────────────────────────────
     status: {
       type: String,
-      enum: ['pending', 'approved', 'rejected'],
+      enum: ['pending', 'in_progress', 'approved', 'rejected'],
       default: 'pending',
       index: true,
     },
@@ -143,13 +143,18 @@ const requestSchema = new mongoose.Schema(
       default: 0, // Points to the index in the approvers array
       min: 0,
     },
+    approvalLevel: {
+      type: Number,
+      default: 0, // Current numeric level (0, 1, 2, or 3)
+      min: 0,
+    },
     approvers: {
       type: [approverSchema],
       default: [], // Populated when request enters the approval pipeline
     },
     approvalRule: {
       type: approvalRuleSchema,
-      default: () => ({ type: 'specific', value: null }),
+      default: () => ({ type: 'sequential', value: null }),
     },
 
     // ─── Payment Tracking ──────────────────────────────────────────────

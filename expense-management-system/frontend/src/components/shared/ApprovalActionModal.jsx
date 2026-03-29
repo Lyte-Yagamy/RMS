@@ -9,7 +9,6 @@ const ApprovalActionModal = ({ request, actionType, onClose, onSuccess }) => {
 
   const isApproval = actionType === 'approve';
   const ActionIcon = isApproval ? Check : X;
-  const actionColor = isApproval ? 'green' : 'red';
   const actionText = isApproval ? 'Approve' : 'Reject';
 
   const handleSubmit = async (e) => {
