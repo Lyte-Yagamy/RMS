@@ -127,8 +127,8 @@ const processApproval = async (req, res, next) => {
     await Approval.create({
       requestId: request._id,
       approverId: req.user._id,
-      approverRole: userRole,
-      level: requiredLevel,
+      role: userRole,
+      step: requiredLevel,
       action,
       comment: comment || '',
     });

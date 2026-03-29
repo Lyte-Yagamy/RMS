@@ -232,8 +232,8 @@ const approveRequest = async (req, res, next) => {
     await Approval.create({
       requestId: request._id,
       approverId: req.user._id,
-      approverRole: userRole,
-      level: requiredLevel,
+      role: userRole,
+      step: requiredLevel,
       action: 'approved',
       comment: comment || '',
     });
@@ -337,8 +337,8 @@ const rejectRequest = async (req, res, next) => {
     await Approval.create({
       requestId: request._id,
       approverId: req.user._id,
-      approverRole: userRole,
-      level: requiredLevel,
+      role: userRole,
+      step: requiredLevel,
       action: 'rejected',
       comment: comment || '',
     });
