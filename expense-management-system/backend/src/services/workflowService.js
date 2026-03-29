@@ -537,6 +537,49 @@ async function _createAuditRecord(data) {
   return auditRecord;
 }
 
+const User = require('../models/User');
+
+/**
+ * Auto-assigns the 3-level approval chain to a new request.
+ * Level 1: Manager, Level 2: Finance, Level 3: Director
+ * 
+ * @param {Object} request - The mongoose request document
+ * @returns {Object} The updated request document
+ */
+async function assignApprovers(request) {
+  // Fetch required roles for the company
+  const employee = await User.findById(request.employeeId);
+  const managerId = employee ? employee.managerId : null;
+  
+  // Try to find the specific manager, or fallback to any manager in company
+  let manager = null;
+  if (managerId) {
+    manager = await User.findById(managerId);
+  }
+  if (!manager) {
+    manager = await User.findOne({ companyId: request.companyId, role: 'manager' });
+  }
+
+  const finance = await User.findOne({ companyId: request.companyId, role: 'finance' });
+  const director = await User.findOne({ companyId: request.companyId, role: 'director' });
+
+  const approvers = [];
+
+  if (manager) {
+    approvers.push({ userId: manager._id, role: 'manager', status: 'pending', comment: '' });
+  }
+  if (finance) {
+    approvers.push({ userId: finance._id, role: 'finance', status: 'pending', comment: '' });
+  }
+  if (director) {
+    approvers.push({ userId: director._id, role: 'director', status: 'pending', comment: '' });
+  }
+
+  request.approvers = approvers;
+  await request.save();
+  return request;
+}
+
 // ─── EXPORTS ─────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -544,6 +587,7 @@ module.exports = {
   processApproval,
   processRejection,
   evaluateApprovalRule,
+  assignApprovers,
 
   // Constants (useful for other modules)
   STATUS,
